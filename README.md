@@ -1,230 +1,458 @@
-# LinkedIn to Clay Integration# 🎯 LinkedIn → Clay Integration (Apify + Token Dinámico)# 🎯 LinkedIn → Clay Integration (Apify Optimizado)# LinkedIn to Clay Integration 🔗
+# LinkedIn Post Fetcher# LinkedIn to Clay Integration# 🎯 LinkedIn → Clay Integration (Apify + Token Dinámico)# 🎯 LinkedIn → Clay Integration (Apify Optimizado)# LinkedIn to Clay Integration 🔗
 
 
 
-REST API service that scrapes LinkedIn posts and interactions on-demand, designed to integrate with Clay.com workflows. Built with Node.js, TypeScript, and Apify for reliable data extraction.
+API service for scraping LinkedIn posts and interactions, designed to integrate with automation platforms like Clay.com. Uses Apify actors for reliable data extraction with intelligent caching to minimize costs.
 
 
 
-## FeaturesSistema inteligente para scrapear posts e interacciones de LinkedIn y exponerlos vía API REST para Clay.com con **optimización extrema de costos** usando Apify.
+## Quick StartREST API service that scrapes LinkedIn posts and interactions on-demand, designed to integrate with Clay.com workflows. Built with Node.js, TypeScript, and Apify for reliable data extraction.
 
 
 
-- Scrape LinkedIn posts from any public profile
-
-- Extract engagement metrics (likes, comments, reposts)
-
-- Intelligent caching to minimize costs (24-hour TTL)## 🌟 Características PrincipalesSistema inteligente para scrapear posts e interacciones de LinkedIn y exponerlos vía API REST para Clay.com con **optimización extrema de costos** usando Apify.**API REST + Webhooks** para scrapear posts de LinkedIn y enviar datos automáticamente a Clay.com.
-
-- Dynamic Apify token support (sent from Clay per request)
-
-- Webhook notifications for new posts
-
-- Change detection to avoid unnecessary scraping
-
-- Ready to deploy on Render free tier✅ **Token dinámico desde Clay** - No hardcodees credenciales  
-
-
-
-## Cost Optimization✅ **Sin riesgo de ban** - Usa Apify (sin cookies/login)  
-
-
-
-The system uses intelligent caching and change detection to reduce scraping costs:✅ **Ultra optimizado** - Cache inteligente, ~94% menos costo  ---## 🎯 Características
-
-
-
-- Without optimization: ~$150/month✅ **Costo mínimo** - ~$5-15/mes (vs $150/mes)  
-
-- With optimization: ~$9/month (94% savings)
-
-- Quick checks before expensive operations (~$0.005 vs $0.05)✅ **Compatible con Clay** - Respuestas < 200KB  
-
-- Only scrape interactions when metrics change
-
-✅ **Multi-tenant** - Múltiples usuarios, cada uno con su token  
-
-## Requirements
-
-## 🌟 Características- ✅ Scraping de posts de perfil LinkedIn (sin base de datos)
-
-- Node.js 18+
-
-- Apify account (free tier includes $5/month credits)---
-
-- Clay.com account
-
-- ✅ Extracción de interacciones (likes, comments, reposts)
-
-## Installation
-
-## 💰 Ahorro de Costos
+Install dependencies:
 
 ```bash
 
-npm install✅ **Sin riesgo de ban** - Usa Apify (sin cookies/login)  - ✅ API REST para consultas on-demand desde Clay
+npm install## FeaturesSistema inteligente para scrapear posts e interacciones de LinkedIn y exponerlos vía API REST para Clay.com con **optimización extrema de costos** usando Apify.
+
+```
+
+
+
+Configure environment variables:
+
+```bash- Scrape LinkedIn posts from any public profile
 
 cp .env.example .env
 
-```| Sin Optimización | Con Optimización | Ahorro |
+```- Extract engagement metrics (likes, comments, reposts)
 
 
 
-Edit `.env` with your configuration:|-----------------|------------------|--------|✅ **Ultra optimizado** - Cache inteligente, scraping solo cuando hay cambios  - ✅ Sistema de webhooks para notificaciones
+Edit `.env` with your settings:- Intelligent caching to minimize costs (24-hour TTL)## 🌟 Características PrincipalesSistema inteligente para scrapear posts e interacciones de LinkedIn y exponerlos vía API REST para Clay.com con **optimización extrema de costos** usando Apify.**API REST + Webhooks** para scrapear posts de LinkedIn y enviar datos automáticamente a Clay.com.
 
+```env
 
+PORT=3000- Dynamic Apify token support (sent from Clay per request)
 
-```env| $150/mes | $9/mes | **94%** 🎉 |
+API_KEY=your-secret-key
 
-PORT=3000
+TARGET_PROFILE_USERNAME=target-linkedin-username- Webhook notifications for new posts
 
-API_KEY=your-server-api-key✅ **Costo mínimo** - ~$5-15/mes (vs $150/mes sin optimización)  - ✅ Autenticación con API Key
+```
 
-TARGET_PROFILE_USERNAME=gabrielmartinezes
+- Change detection to avoid unnecessary scraping
 
-MAX_POSTS_PER_SCRAPE=10📖 Ver: [`COST-OPTIMIZATION.md`](COST-OPTIMIZATION.md)
+Start the server:
 
-CACHE_TTL_HOURS=24
-
-```✅ **Compatible con Clay** - Respuestas < 200KB  - ✅ Rate limiting y seguridad
-
-
-
-Note: The Apify token should be sent from Clay in each request, not stored in `.env`.---
-
-
-
-## Usage✅ **Webhooks** - Notificaciones automáticas  - ✅ Listo para deploy en Render (free tier)
-
-
-
-Start the server:## 🚀 Quick Start
-
-
-
-```bash✅ **API REST** - Fácil integración  
+```bash- Ready to deploy on Render free tier✅ **Token dinámico desde Clay** - No hardcodees credenciales  
 
 npm run dev:apify
 
-```### 1. Instalar
+```
 
 
 
-The API will be available at `http://localhost:3000````powershell---
+Server runs at `http://localhost:3000`## Cost Optimization✅ **Sin riesgo de ban** - Usa Apify (sin cookies/login)  
 
 
 
-## API Endpointsnpm install
+## API Reference
 
 
 
-### Health Check```---
+All endpoints require authentication via `x-api-key` header or `api_key` query parameter.The system uses intelligent caching and change detection to reduce scraping costs:✅ **Ultra optimizado** - Cache inteligente, ~94% menos costo  ---## 🎯 Características
 
-```http
+
+
+### Health Check
+
+
+
+```- Without optimization: ~$150/month✅ **Costo mínimo** - ~$5-15/mes (vs $150/mes)  
 
 GET /health
 
+```- With optimization: ~$9/month (94% savings)
+
+
+
+Returns server status and cache statistics.- Quick checks before expensive operations (~$0.005 vs $0.05)✅ **Compatible con Clay** - Respuestas < 200KB  
+
+
+
+### Check for New Posts- Only scrape interactions when metrics change
+
+
+
+```✅ **Multi-tenant** - Múltiples usuarios, cada uno con su token  
+
+GET /api/check-new-posts?username=profilename
+
+## Requirements
+
+Headers:
+
+  x-api-key: YOUR_KEY## 🌟 Características- ✅ Scraping de posts de perfil LinkedIn (sin base de datos)
+
+  x-apify-token: YOUR_APIFY_TOKEN
+
+```- Node.js 18+
+
+
+
+Quick check if profile has new posts. Cost: ~$0.005- Apify account (free tier includes $5/month credits)---
+
+
+
+Response:- Clay.com account
+
+```json
+
+{- ✅ Extracción de interacciones (likes, comments, reposts)
+
+  "success": true,
+
+  "data": {## Installation
+
+    "hasNewPosts": true,
+
+    "username": "profilename",## 💰 Ahorro de Costos
+
+    "checkedAt": "2025-10-19T10:00:00Z"
+
+  }```bash
+
+}
+
+```npm install✅ **Sin riesgo de ban** - Usa Apify (sin cookies/login)  - ✅ API REST para consultas on-demand desde Clay
+
+
+
+### Get Postscp .env.example .env
+
+
+
+``````| Sin Optimización | Con Optimización | Ahorro |
+
+GET /api/posts?username=profilename&max_posts=10
+
+
+
+Headers:
+
+  x-api-key: YOUR_KEYEdit `.env` with your configuration:|-----------------|------------------|--------|✅ **Ultra optimizado** - Cache inteligente, scraping solo cuando hay cambios  - ✅ Sistema de webhooks para notificaciones
+
+  x-apify-token: YOUR_APIFY_TOKEN
+
 ```
 
-### 2. Configurar `.env`## 📋 Requisitos
 
-### Check for New Posts (Quick & Cheap)
 
-```http```env
+Returns posts with caching. Cost: Free if cached, ~$0.05 if scraping needed.```env| $150/mes | $9/mes | **94%** 🎉 |
 
-GET /api/check-new-posts
 
-Headers:# Tu API Key (invéntala)## 💰 Ahorro de Costos
+
+Response:PORT=3000
+
+```json
+
+{API_KEY=your-server-api-key✅ **Costo mínimo** - ~$5-15/mes (vs $150/mes sin optimización)  - ✅ Autenticación con API Key
+
+  "success": true,
+
+  "data": {TARGET_PROFILE_USERNAME=gabrielmartinezes
+
+    "posts": [
+
+      {MAX_POSTS_PER_SCRAPE=10📖 Ver: [`COST-OPTIMIZATION.md`](COST-OPTIMIZATION.md)
+
+        "id": "post-id",
+
+        "url": "post-url",CACHE_TTL_HOURS=24
+
+        "authorName": "Author Name",
+
+        "content": "Post content...",```✅ **Compatible con Clay** - Respuestas < 200KB  - ✅ Rate limiting y seguridad
+
+        "publishedAt": "2025-10-15T14:30:00Z",
+
+        "metrics": {
+
+          "likes": 45,
+
+          "comments": 12,Note: The Apify token should be sent from Clay in each request, not stored in `.env`.---
+
+          "reposts": 5
+
+        }
+
+      }
+
+    ],## Usage✅ **Webhooks** - Notificaciones automáticas  - ✅ Listo para deploy en Render (free tier)
+
+    "totalPosts": 10,
+
+    "scrapedAt": "2025-10-19T10:00:00Z"
+
+  }
+
+}Start the server:## 🚀 Quick Start
+
+```
+
+
+
+### Get Post Interactions
+
+```bash✅ **API REST** - Fácil integración  
+
+```
+
+GET /api/interactions/:postId?current_likes=120&current_comments=15npm run dev:apify
+
+
+
+Headers:```### 1. Instalar
+
+  x-api-key: YOUR_KEY
+
+  x-apify-token: YOUR_APIFY_TOKEN
+
+```
+
+The API will be available at `http://localhost:3000````powershell---
+
+Returns interactions only if metrics changed. Cost: Free if unchanged, ~$0.35 if scraping needed.
+
+
+
+## Deployment
+
+## API Endpointsnpm install
+
+### Deploy to Render
+
+
+
+1. Push code to GitHub
+
+2. Create new Web Service on Render.com### Health Check```---
+
+3. Connect your repository
+
+4. Configure:```http
+
+   - Build Command: `npm install && npm run build`
+
+   - Start Command: `npm start`GET /health
+
+5. Add environment variable: `API_KEY=your-secret-key`
+
+6. Deploy```
+
+
+
+Your API will be at: `https://your-service.onrender.com`### 2. Configurar `.env`## 📋 Requisitos
+
+
+
+### Deploy to Other Platforms### Check for New Posts (Quick & Cheap)
+
+
+
+Works on any Node.js hosting platform (Heroku, Railway, Fly.io, etc.):```http```env
+
+
+
+1. Ensure Node.js 18+ is availableGET /api/check-new-posts
+
+2. Set `API_KEY` environment variable
+
+3. Build: `npm run build`Headers:# Tu API Key (invéntala)## 💰 Ahorro de Costos
+
+4. Start: `npm start`
 
   x-api-key: YOUR_API_KEY
+
+## Integration with Clay.com
 
   x-apify-token: YOUR_APIFY_TOKENAPI_KEY=tu-clave-servidor-123
 
+### Store Credentials
+
 Query:
 
-  ?username=profileusername- Node.js 18+ 
+In Clay, go to Settings > Secrets and add:
+
+- `SERVER_API_KEY`: Your API server key  ?username=profileusername- Node.js 18+ 
+
+- `APIFY_TOKEN`: Your Apify API token
 
 ```
+
+### HTTP Request Setup
 
 # Configuración básica
 
-Cost: ~$0.005 per check
+Create HTTP API column with:
 
-PORT=3000| Sin Optimización | Con Optimización | Ahorro |- Cuenta de LinkedIn (opcional pero recomendado)
+- Method: GETCost: ~$0.005 per check
 
-### Get Posts
+- URL: `https://your-server.com/api/check-new-posts?username=targetuser`
 
-```httpTARGET_PROFILE_USERNAME=gabrielmartinezes
+- Headers:PORT=3000| Sin Optimización | Con Optimización | Ahorro |- Cuenta de LinkedIn (opcional pero recomendado)
 
-GET /api/posts
+  - `x-api-key: {{secrets.SERVER_API_KEY}}`
 
-Headers:MAX_POSTS_PER_SCRAPE=10|-----------------|------------------|--------|- Cuenta de Render.com (o cualquier hosting Node.js)
+  - `x-apify-token: {{secrets.APIFY_TOKEN}}`### Get Posts
 
-  x-api-key: YOUR_API_KEY
 
-  x-apify-token: YOUR_APIFY_TOKEN```
+
+### Recommended Workflow```httpTARGET_PROFILE_USERNAME=gabrielmartinezes
+
+
+
+Run daily (1x per day):GET /api/posts
+
+
+
+1. Check for new posts (cheap, ~$0.005)Headers:MAX_POSTS_PER_SCRAPE=10|-----------------|------------------|--------|- Cuenta de Render.com (o cualquier hosting Node.js)
+
+2. If no new posts, stop
+
+3. If new posts exist, scrape full data  x-api-key: YOUR_API_KEY
+
+4. Store posts in Clay table
+
+5. For each post, check if interactions changed  x-apify-token: YOUR_APIFY_TOKEN```
+
+6. Scrape interactions only if metrics changed
 
 Query:
+
+This approach minimizes costs by avoiding unnecessary scraping.
 
   ?username=profileusername&max_posts=10| $150/mes | $9/mes | **94%** 🎉 |- Cuenta de Clay.com
 
+## Authentication Options
+
 ```
 
-**🔑 Nota:** El token de Apify lo envía **Clay en cada request**, no va en `.env`
+### Option 1: Header (Recommended)
 
-Cost: Free if cached, $0.05 if scraping needed
+```**🔑 Nota:** El token de Apify lo envía **Clay en cada request**, no va en `.env`
+
+Headers:
+
+  x-api-key: your-api-keyCost: Free if cached, $0.05 if scraping needed
+
+  x-apify-token: your-apify-token
+
+```
 
 
 
-### Get Interactions
+### Option 2: Query Parameters### Get Interactions
 
-```http### 3. Iniciar
+```
+
+?api_key=your-api-key&apify_token=your-apify-token```http### 3. Iniciar
+
+```
 
 GET /api/interactions/:postId
 
+## Cost Optimization
+
 Headers:```powershell**Estrategias implementadas:**---
+
+The system implements several strategies to reduce API costs:
 
   x-api-key: YOUR_API_KEY
 
-  x-apify-token: YOUR_APIFY_TOKENnpm run dev:apify
+- 24-hour cache for posts
 
-Query:
+- Quick checks before expensive operations  x-apify-token: YOUR_APIFY_TOKENnpm run dev:apify
 
-  ?current_likes=120&current_comments=15```- ✅ Check rápido antes de scrapear ($0.005 vs $0.05)
+- Change detection for interactions (only scrape if metrics changed)
 
-```
+- Smart hash comparison to avoid redundant requestsQuery:
 
 
+
+Estimated monthly costs with daily scraping:  ?current_likes=120&current_comments=15```- ✅ Check rápido antes de scrapear ($0.005 vs $0.05)
+
+- Profile with no new posts: ~$0.15/month
+
+- Profile with 2 posts/week: ~$9/month```
+
+- Profile with 1 post/day: ~$22/month
+
+
+
+Without optimization: ~$150/month (94% savings)
 
 Cost: Free if no changes detected, $0.35 if scraping needed
 
+## Configuration
+
 ---- ✅ Cache de 24h (evita scraping repetido)## 🚀 Instalación Local
+
+Available environment variables:
 
 ## Clay Integration
 
+```env
 
+PORT=3000
 
-### Setup in Clay
+API_KEY=your-api-key
 
-## 📡 Cómo Clay envía el token- ✅ Solo scrape interactions si stats cambiaron
+TARGET_PROFILE_USERNAME=default-username### Setup in Clay
+
+MAX_POSTS_PER_SCRAPE=10
+
+CACHE_TTL_HOURS=24## 📡 Cómo Clay envía el token- ✅ Solo scrape interactions si stats cambiaron
+
+```
 
 1. Store credentials in Clay Secrets:
 
+Note: Apify token should be sent in each request from your automation platform, not stored in `.env`.
+
    - `SERVER_API_KEY`: Your server API key
+
+## Requirements
 
    - `APIFY_TOKEN`: Your Apify API token
 
-### **Método 1: Header (RECOMENDADO)**- ✅ Detección inteligente de posts nuevos### 1. Clonar e instalar dependencias
+- Node.js 18 or higher
+
+- Apify account (free tier includes $5/month credits)### **Método 1: Header (RECOMENDADO)**- ✅ Detección inteligente de posts nuevos### 1. Clonar e instalar dependencias
+
+- Valid API key for authentication
 
 2. Create HTTP API Request action:
 
+## Scripts
+
    - URL: `https://your-server.com/api/check-new-posts?username=profileusername````http
 
-   - Headers:
+- `npm run dev:apify` - Development server
+
+- `npm run build` - Compile TypeScript   - Headers:
+
+- `npm start` - Production server
 
      - `x-api-key: {{secrets.SERVER_API_KEY}}`GET /api/posts
 
+## License
+
      - `x-apify-token: {{secrets.APIFY_TOKEN}}`
+
+MIT
 
 Headers:
 
