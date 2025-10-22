@@ -142,6 +142,8 @@ export class ApifyScraperService {
 
         const likesData = await client.dataset(likesRun.defaultDatasetId).listItems();
         
+        console.log(`  📦 Raw likes data sample:`, JSON.stringify(likesData.items[0], null, 2).substring(0, 500));
+        
         if (likesData.items && likesData.items.length > 0) {
           likesData.items.forEach((item: any) => {
             interactions.push({
@@ -166,6 +168,8 @@ export class ApifyScraperService {
         });
 
         const commentsData = await client.dataset(commentsRun.defaultDatasetId).listItems();
+        
+        console.log(`  📦 Raw comments data sample:`, JSON.stringify(commentsData.items[0], null, 2).substring(0, 500));
         
         if (commentsData.items && commentsData.items.length > 0) {
           commentsData.items.forEach((item: any) => {
