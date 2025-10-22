@@ -5,10 +5,18 @@ interface CacheEntry {
   data: any;
   timestamp: number;
   hash: string;
+  processedIds?: Set<string>; // IDs de items ya procesados
+}
+
+interface InteractionSnapshot {
+  likeUserIds: Set<string>;
+  commentIds: Set<string>;
+  lastChecked: number;
 }
 
 export class ApifyScraperService {
   private cache: Map<string, CacheEntry> = new Map();
+  private interactionSnapshots: Map<string, InteractionSnapshot> = new Map();
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
 
   // IDs de los actors de Apify
@@ -102,6 +110,7 @@ export class ApifyScraperService {
 
   /**
    * Obtiene interacciones de un post SOLO SI CAMBIARON LOS NÚMEROS
+   * Y solo trae las interacciones NUEVAS que no teníamos antes
    */
   async getPostInteractions(
     apifyToken: string,
@@ -112,32 +121,46 @@ export class ApifyScraperService {
 
     const cacheKey = `interactions:${postUrn}`;
     const cached = this.getFromCache(cacheKey);
-
-    // Verificar si las stats cambiaron
-    if (cached && cached.hash) {
-      const currentHash = this.hashStats(currentStats);
-      
-      if (cached.hash === currentHash) {
-        console.log(`✅ No changes detected, using cached interactions`);
-        return cached.data;
-      }
-
-      console.log(`🔄 Stats changed! Previous: ${cached.hash}, Current: ${currentHash}`);
+    
+    // Obtener snapshot de IDs ya procesados
+    let snapshot = this.interactionSnapshots.get(postUrn);
+    if (!snapshot) {
+      snapshot = {
+        likeUserIds: new Set<string>(),
+        commentIds: new Set<string>(),
+        lastChecked: Date.now(),
+      };
+      this.interactionSnapshots.set(postUrn, snapshot);
     }
 
-    console.log(`🚀 Fetching fresh interactions from Apify...`);
+    // Verificar si las stats cambiaron
+    const currentHash = this.hashStats(currentStats);
+    const previousLikesCount = snapshot.likeUserIds.size;
+    const previousCommentsCount = snapshot.commentIds.size;
+    
+    const newLikesCount = currentStats.likes - previousLikesCount;
+    const newCommentsCount = currentStats.comments - previousCommentsCount;
+
+    if (cached && cached.hash === currentHash && newLikesCount === 0 && newCommentsCount === 0) {
+      console.log(`✅ No changes detected, using cached interactions`);
+      return cached.data;
+    }
+
+    console.log(`🔄 Stats changed! Likes: +${newLikesCount}, Comments: +${newCommentsCount}`);
+    console.log(`🚀 Fetching only NEW interactions from Apify...`);
 
     const interactions: Interaction[] = [];
     const client = this.getClient(apifyToken);
+    const newInteractions: Interaction[] = []; // Solo las nuevas
 
     try {
-      // 1. Obtener reacciones (likes)
-      if (currentStats.likes > 0) {
-        console.log(`  Fetching ${currentStats.likes} likes...`);
+      // 1. Obtener reacciones (likes) - SOLO SI HAY NUEVAS
+      if (newLikesCount > 0 || (currentStats.likes > 0 && snapshot.likeUserIds.size === 0)) {
+        console.log(`  Fetching up to ${currentStats.likes} likes...`);
         
         const likesRun = await client.actor(this.ACTORS.REACTIONS).call({
           postUrls: [`https://www.linkedin.com/feed/update/urn:li:activity:${postUrn}`],
-          maxItems: Math.min(currentStats.likes, 100), // Limitar para no gastar mucho
+          maxItems: Math.min(currentStats.likes, 100),
         });
 
         const likesData = await client.dataset(likesRun.defaultDatasetId).listItems();
@@ -145,26 +168,39 @@ export class ApifyScraperService {
         console.log(`  📦 Raw likes data sample:`, JSON.stringify(likesData.items[0], null, 2).substring(0, 500));
         
         if (likesData.items && likesData.items.length > 0) {
+          let newLikesFound = 0;
+          
           likesData.items.forEach((item: any) => {
-            interactions.push({
-              type: 'like',
-              userName: item.name || item.full_name || item.userName || 'Unknown',
-              userUrl: item.profile_url || item.profileUrl || item.url || '',
-              userHeadline: item.headline || item.userHeadline || '',
-              timestamp: item.reacted_at || item.reactedAt || item.timestamp || new Date().toISOString(),
-            });
+            const userId = item.profile_url || item.profileUrl || item.url || item.id || `user-${item.name}`;
+            
+            if (!snapshot!.likeUserIds.has(userId)) {
+              const interaction: Interaction = {
+                type: 'like',
+                userName: item.name || item.full_name || item.userName || 'Unknown',
+                userUrl: userId,
+                userHeadline: item.headline || item.userHeadline || '',
+                timestamp: item.reacted_at || item.reactedAt || item.timestamp || new Date().toISOString(),
+              };
+              
+              interactions.push(interaction);
+              snapshot!.likeUserIds.add(userId);
+              newLikesFound++;
+            }
           });
-          console.log(`  ✅ Found ${likesData.items.length} likes`);
+          
+          console.log(`  ✅ Found ${newLikesFound} NEW likes (${snapshot!.likeUserIds.size} total tracked)`);
         }
+      } else {
+        console.log(`  ℹ️ Skipping likes - no new ones detected`);
       }
 
-      // 2. Obtener comentarios
-      if (currentStats.comments > 0) {
-        console.log(`  Fetching ${currentStats.comments} comments...`);
+      // 2. Obtener comentarios - SOLO SI HAY NUEVOS
+      if (newCommentsCount > 0 || (currentStats.comments > 0 && snapshot.commentIds.size === 0)) {
+        console.log(`  Fetching up to ${currentStats.comments} comments...`);
         
         const commentsRun = await client.actor(this.ACTORS.COMMENTS).call({
           postUrls: [`https://www.linkedin.com/feed/update/urn:li:activity:${postUrn}`],
-          maxItems: Math.min(currentStats.comments, 50), // Limitar comentarios
+          maxItems: Math.min(currentStats.comments, 50),
         });
 
         const commentsData = await client.dataset(commentsRun.defaultDatasetId).listItems();
@@ -172,31 +208,53 @@ export class ApifyScraperService {
         console.log(`  📦 Raw comments data sample:`, JSON.stringify(commentsData.items[0], null, 2).substring(0, 500));
         
         if (commentsData.items && commentsData.items.length > 0) {
+          let newCommentsFound = 0;
+          
           commentsData.items.forEach((item: any) => {
-            interactions.push({
-              type: 'comment',
-              userName: item.author?.name || item.authorName || item.name || 'Unknown',
-              userUrl: item.author?.profile_url || item.authorProfileUrl || item.profileUrl || '',
-              userHeadline: item.author?.headline || item.authorHeadline || item.headline || '',
-              commentText: item.text || item.comment || item.replyText || '',
-              timestamp: item.posted_at || item.postedAt || item.timestamp || new Date().toISOString(),
-            });
+            const commentId = item.comment_id || item.id || item.urn || `${item.author?.name}-${item.timestamp}`;
+            
+            if (!snapshot!.commentIds.has(commentId)) {
+              const interaction: Interaction = {
+                type: 'comment',
+                userName: item.author?.name || item.authorName || item.name || 'Unknown',
+                userUrl: item.author?.profile_url || item.authorProfileUrl || item.profileUrl || '',
+                userHeadline: item.author?.headline || item.authorHeadline || item.headline || '',
+                commentText: item.text || item.comment || item.replyText || '',
+                timestamp: item.posted_at || item.postedAt || item.timestamp || new Date().toISOString(),
+              };
+              
+              interactions.push(interaction);
+              snapshot!.commentIds.add(commentId);
+              newCommentsFound++;
+            }
           });
-          console.log(`  ✅ Found ${commentsData.items.length} comments`);
+          
+          console.log(`  ✅ Found ${newCommentsFound} NEW comments (${snapshot!.commentIds.size} total tracked)`);
         }
+      } else {
+        console.log(`  ℹ️ Skipping comments - no new ones detected`);
       }
 
-      // Calcular costo estimado
-      const estimatedCost = (currentStats.likes * 0.003) + (currentStats.comments * 0.007);
-      console.log(`💰 Estimated cost: ~$${estimatedCost.toFixed(3)}`);
+      // Calcular costo estimado solo por las nuevas
+      const actualLikesFetched = newLikesCount > 0 ? currentStats.likes : 0;
+      const actualCommentsFetched = newCommentsCount > 0 ? currentStats.comments : 0;
+      const estimatedCost = (actualLikesFetched * 0.003) + (actualCommentsFetched * 0.007);
+      console.log(`💰 Estimated cost: ~$${estimatedCost.toFixed(3)} (${interactions.length} new interactions)`);
 
     } catch (error: any) {
       console.error(`❌ Error fetching interactions:`, error.message);
     }
 
+    // Actualizar snapshot
+    snapshot.lastChecked = Date.now();
+    
+    // Merge con interactions anteriores del cache
+    const allInteractions = cached ? [...cached.data, ...interactions] : interactions;
+    
     // Guardar en cache con hash de stats
-    this.saveToCache(cacheKey, interactions, this.hashStats(currentStats));
+    this.saveToCache(cacheKey, allInteractions, currentHash);
 
+    // Retornar solo las nuevas para Clay
     return interactions;
   }
 
@@ -391,13 +449,19 @@ export class ApifyScraperService {
   /**
    * Retorna estadísticas de uso
    */
-  getCacheStats(): { entries: number; size: string } {
+  getCacheStats(): { entries: number; size: string; trackedInteractions: number } {
     const entries = this.cache.size;
     const size = JSON.stringify(Array.from(this.cache.entries())).length;
+    
+    let totalTrackedInteractions = 0;
+    this.interactionSnapshots.forEach(snapshot => {
+      totalTrackedInteractions += snapshot.likeUserIds.size + snapshot.commentIds.size;
+    });
     
     return {
       entries,
       size: `${(size / 1024).toFixed(2)} KB`,
+      trackedInteractions: totalTrackedInteractions,
     };
   }
 }
