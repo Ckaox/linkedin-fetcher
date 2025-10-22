@@ -17,11 +17,10 @@ cp .env.example .env
 Configure your settings in `.env`:
 ```
 PORT=3000
-API_KEY=your-api-key-here
-TARGET_PROFILE_USERNAME=username
-MAX_POSTS_PER_SCRAPE=10
+TARGET_PROFILE_USERNAME=username  # Optional fallback
 CACHE_TTL_HOURS=24
 ```
+⚠️ **Note**: Apify token is passed from Clay via header, not stored in .env
 
 Start the server:
 ```bash
@@ -41,7 +40,6 @@ GET /health
 ```
 GET /api/check-new-posts?username=profile-name
 Headers:
-  x-api-key: YOUR_API_KEY
   x-apify-token: YOUR_APIFY_TOKEN
 ```
 
@@ -51,7 +49,6 @@ Returns whether profile has new posts. Cost: ~$0.005
 ```
 GET /api/posts?username=profile-name&max_posts=10
 Headers:
-  x-api-key: YOUR_API_KEY
   x-apify-token: YOUR_APIFY_TOKEN
 ```
 
@@ -61,7 +58,6 @@ Returns post data with caching. Cost: Free if cached, ~$0.05 if scraping
 ```
 GET /api/interactions/:postId?current_likes=100&current_comments=20
 Headers:
-  x-api-key: YOUR_API_KEY
   x-apify-token: YOUR_APIFY_TOKEN
 ```
 
@@ -75,24 +71,23 @@ Returns interactions if metrics changed. Cost: Free if unchanged, ~$0.35 if chan
 3. Connect repository
 4. Set build: `npm install && npm run build`
 5. Set start: `npm start`
-6. Add env var: `API_KEY=your-key`
+6. No environment variables needed! (Apify token comes from Clay)
 
 ### On Other Hosts
 Works on any Node.js platform (Heroku, Railway, Fly.io):
 - Ensure Node.js 18+
-- Set `API_KEY` environment variable
+- No environment variables required
 - Run `npm run build` then `npm start`
 
 ## Clay Integration
 
 Store in Clay Secrets:
-- `SERVER_API_KEY` - Your API key
 - `APIFY_TOKEN` - Your Apify token
+- `SERVER_URL` - Your Render URL (https://your-app.onrender.com)
 
 Create HTTP API request:
-- URL: `https://your-server.com/api/check-new-posts?username=target`
-- Add headers:
-  - `x-api-key: {{secrets.SERVER_API_KEY}}`
+- URL: `{{secrets.SERVER_URL}}/api/check-new-posts?username=target`
+- Add header:
   - `x-apify-token: {{secrets.APIFY_TOKEN}}`
 
 Daily workflow:
@@ -104,15 +99,19 @@ Daily workflow:
 
 ## Authentication
 
-Pass credentials via headers:
+Pass Apify token via header:
 ```
-x-api-key: your-key
 x-apify-token: your-token
 ```
 
-Or via query params:
+Or via query param:
 ```
-?api_key=your-key&apify_token=your-token
+?apify_token=your-token
+```
+
+Username via query param:
+```
+?username=profile-username
 ```
 
 ## Cost Estimates

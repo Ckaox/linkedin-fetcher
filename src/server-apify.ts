@@ -32,21 +32,6 @@ const webhookManager = new WebhookManager(
   parseInt(process.env.WEBHOOK_TIMEOUT || '10000')
 );
 
-// API Key authentication middleware
-const authenticateApiKey = (req: Request, res: Response, next: NextFunction) => {
-  const apiKey = req.headers['x-api-key'] || req.query.api_key;
-  
-  if (!apiKey || apiKey !== process.env.API_KEY) {
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized - Invalid or missing API key',
-      timestamp: new Date().toISOString(),
-    } as ApiResponse<null>);
-  }
-  
-  next();
-};
-
 // Routes
 
 // Health check
@@ -63,7 +48,7 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Check for new posts (lightweight, casi gratis)
-app.get('/api/check-new-posts', authenticateApiKey, async (req: Request, res: Response) => {
+app.get('/api/check-new-posts', async (req: Request, res: Response) => {
   try {
     // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -103,7 +88,7 @@ app.get('/api/check-new-posts', authenticateApiKey, async (req: Request, res: Re
 });
 
 // Get posts (CON CACHE - solo scrape si hay nuevos)
-app.get('/api/posts', authenticateApiKey, async (req: Request, res: Response) => {
+app.get('/api/posts', async (req: Request, res: Response) => {
   try {
     // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -179,7 +164,7 @@ app.get('/api/posts', authenticateApiKey, async (req: Request, res: Response) =>
 });
 
 // Get interactions for a specific post
-app.get('/api/interactions/:postId', authenticateApiKey, async (req: Request, res: Response) => {
+app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
     const currentLikes = parseInt(req.query.current_likes as string) || 0;
@@ -217,7 +202,7 @@ app.get('/api/interactions/:postId', authenticateApiKey, async (req: Request, re
 });
 
 // Webhook management
-app.post('/webhook/subscribe', authenticateApiKey, (req: Request, res: Response) => {
+app.post('/webhook/subscribe', (req: Request, res: Response) => {
   const { url, events } = req.body;
 
   if (!url || !events) {
@@ -241,7 +226,7 @@ app.post('/webhook/subscribe', authenticateApiKey, (req: Request, res: Response)
   } as ApiResponse<any>);
 });
 
-app.post('/webhook/unsubscribe', authenticateApiKey, (req: Request, res: Response) => {
+app.post('/webhook/unsubscribe', (req: Request, res: Response) => {
   const { url } = req.body;
 
   if (!url) {
@@ -264,7 +249,7 @@ app.post('/webhook/unsubscribe', authenticateApiKey, (req: Request, res: Respons
   } as ApiResponse<any>);
 });
 
-app.get('/webhook/list', authenticateApiKey, (req: Request, res: Response) => {
+app.get('/webhook/list', (req: Request, res: Response) => {
   const subscriptions = webhookManager.getSubscriptions();
 
   res.json({
@@ -278,7 +263,7 @@ app.get('/webhook/list', authenticateApiKey, (req: Request, res: Response) => {
 });
 
 // Cache management
-app.post('/cache/clear', authenticateApiKey, (req: Request, res: Response) => {
+app.post('/cache/clear', (req: Request, res: Response) => {
   apifyService.clearExpiredCache();
 
   res.json({
@@ -306,17 +291,16 @@ app.listen(PORT, () => {
   console.log('🎯 ===================================\n');
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔑 API Key configured: ${process.env.API_KEY ? '✅ Yes' : '❌ No'}`);
-  console.log(`🤖 Apify Token configured: ${process.env.APIFY_API_TOKEN ? '✅ Yes' : '❌ No'}`);
-  console.log(`👤 Target profile: ${process.env.TARGET_PROFILE_USERNAME}`);
+  console.log(`🤖 Apify Token: Pass via header "x-apify-token" or query "apify_token"`);
+  console.log(`👤 Target profile: ${process.env.TARGET_PROFILE_USERNAME || 'Pass via "username" param'}`);
   console.log(`💾 Cache TTL: ${process.env.CACHE_TTL_HOURS || 24}h`);
   console.log('\n✅ Ready to receive requests!\n');
   console.log('📌 Endpoints:');
   console.log(`   GET  http://localhost:${PORT}/health`);
-  console.log(`   GET  http://localhost:${PORT}/api/check-new-posts?api_key=YOUR_KEY`);
-  console.log(`   GET  http://localhost:${PORT}/api/posts?api_key=YOUR_KEY`);
-  console.log(`   GET  http://localhost:${PORT}/api/interactions/:postId?api_key=YOUR_KEY`);
-  console.log('\n');
+  console.log(`   GET  http://localhost:${PORT}/api/check-new-posts?username=USER`);
+  console.log(`   GET  http://localhost:${PORT}/api/posts?username=USER`);
+  console.log(`   GET  http://localhost:${PORT}/api/interactions/:postId`);
+  console.log('\n💡 All endpoints require Apify token via header "x-apify-token"\n');
 
   // Limpiar cache expirado cada 6 horas
   setInterval(() => {
