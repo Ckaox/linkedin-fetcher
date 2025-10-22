@@ -170,10 +170,23 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     const currentLikes = parseInt(req.query.current_likes as string) || 0;
     const currentComments = parseInt(req.query.current_comments as string) || 0;
 
+    // Obtener Apify token del header o query
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token. Provide via header "x-apify-token" or query param "apify_token"',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
     console.log(`\n📊 Request: Get interactions for post ${postId}`);
     console.log(`   Current stats: ${currentLikes} likes, ${currentComments} comments`);
 
-    const interactions = await apifyService.getPostInteractions(postId, {
+    const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: currentLikes,
       comments: currentComments,
     });

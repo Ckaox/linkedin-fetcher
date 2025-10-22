@@ -14,8 +14,9 @@ export class ApifyScraperService {
   // IDs de los actors de Apify
   private readonly ACTORS = {
     POSTS: 'apimaestro/linkedin-profile-posts',
-    REACTIONS: 'apimaestro/linkedin-profile-reactions',
-    COMMENTS: 'apimaestro/linkedin-profile-comments',
+    REACTIONS: 'J9UfswnR3Kae4O6vm',  // Actor de reacciones
+    COMMENTS: '2XnpwxfhSW1fAWElp',   // Actor de replies/comentarios
+    RESHARES: 'WTiV7eppiChuBc8Xq',   // Actor de reshares
   };
 
   constructor() {
@@ -103,6 +104,7 @@ export class ApifyScraperService {
    * Obtiene interacciones de un post SOLO SI CAMBIARON LOS NÚMEROS
    */
   async getPostInteractions(
+    apifyToken: string,
     postUrn: string,
     currentStats: { likes: number; comments: number }
   ): Promise<Interaction[]> {
@@ -125,14 +127,68 @@ export class ApifyScraperService {
 
     console.log(`🚀 Fetching fresh interactions from Apify...`);
 
-    // Aquí llamaríamos a los actors de reactions y comments
-    // Por ahora retorno array vacío como placeholder
     const interactions: Interaction[] = [];
+    const client = this.getClient(apifyToken);
 
-    // TODO: Implementar llamadas a reactions y comments actors
-    // Este es un placeholder para la estructura
+    try {
+      // 1. Obtener reacciones (likes)
+      if (currentStats.likes > 0) {
+        console.log(`  Fetching ${currentStats.likes} likes...`);
+        
+        const likesRun = await client.actor(this.ACTORS.REACTIONS).call({
+          postUrls: [`https://www.linkedin.com/feed/update/urn:li:activity:${postUrn}`],
+          maxItems: Math.min(currentStats.likes, 100), // Limitar para no gastar mucho
+        });
 
-    console.log(`💰 Cost: $0.00 (not implemented yet)`);
+        const likesData = await client.dataset(likesRun.defaultDatasetId).listItems();
+        
+        if (likesData.items && likesData.items.length > 0) {
+          likesData.items.forEach((item: any) => {
+            interactions.push({
+              type: 'like',
+              userName: item.name || item.full_name || item.userName || 'Unknown',
+              userUrl: item.profile_url || item.profileUrl || item.url || '',
+              userHeadline: item.headline || item.userHeadline || '',
+              timestamp: item.reacted_at || item.reactedAt || item.timestamp || new Date().toISOString(),
+            });
+          });
+          console.log(`  ✅ Found ${likesData.items.length} likes`);
+        }
+      }
+
+      // 2. Obtener comentarios
+      if (currentStats.comments > 0) {
+        console.log(`  Fetching ${currentStats.comments} comments...`);
+        
+        const commentsRun = await client.actor(this.ACTORS.COMMENTS).call({
+          postUrls: [`https://www.linkedin.com/feed/update/urn:li:activity:${postUrn}`],
+          maxItems: Math.min(currentStats.comments, 50), // Limitar comentarios
+        });
+
+        const commentsData = await client.dataset(commentsRun.defaultDatasetId).listItems();
+        
+        if (commentsData.items && commentsData.items.length > 0) {
+          commentsData.items.forEach((item: any) => {
+            interactions.push({
+              type: 'comment',
+              userName: item.author?.name || item.authorName || item.name || 'Unknown',
+              userUrl: item.author?.profile_url || item.authorProfileUrl || item.profileUrl || '',
+              userHeadline: item.author?.headline || item.authorHeadline || item.headline || '',
+              commentText: item.text || item.comment || item.replyText || '',
+              timestamp: item.posted_at || item.postedAt || item.timestamp || new Date().toISOString(),
+            });
+          });
+          console.log(`  ✅ Found ${commentsData.items.length} comments`);
+        }
+      }
+
+      // Calcular costo estimado
+      const estimatedCost = (currentStats.likes * 0.003) + (currentStats.comments * 0.007);
+      console.log(`💰 Estimated cost: ~$${estimatedCost.toFixed(3)}`);
+
+    } catch (error: any) {
+      console.error(`❌ Error fetching interactions:`, error.message);
+    }
 
     // Guardar en cache con hash de stats
     this.saveToCache(cacheKey, interactions, this.hashStats(currentStats));
