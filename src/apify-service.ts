@@ -50,11 +50,13 @@ export class ApifyScraperService {
     try {
       const client = this.getClient(apifyToken);
       
-      // Llamar al actor de Apify
+      // Llamar al actor de Apify con límite específico
+      console.log(`💰 Requesting only ${maxPosts} posts from Apify to save costs...`);
+      
       const run = await client.actor(this.ACTORS.POSTS).call({
         username: username,
+        limit: maxPosts,  // ← Límite directo en Apify
         page_number: 1,
-        // No usar "Total Posts to Scrape" para tener control manual
       });
 
       // Obtener resultados
@@ -70,11 +72,8 @@ export class ApifyScraperService {
       // Log del primer item para debug
       console.log(`🔍 First item structure:`, JSON.stringify(items[0], null, 2).substring(0, 500));
 
-      // Tomar solo los más recientes
-      const recentPosts = items.slice(0, maxPosts);
-
-      // Normalizar datos al formato esperado
-      const normalizedPosts = this.normalizePosts(recentPosts);
+      // Normalizar datos al formato esperado (Apify ya limitó a maxPosts)
+      const normalizedPosts = this.normalizePosts(items);
       
       console.log(`✨ Normalized ${normalizedPosts.length} posts`);
 
@@ -160,24 +159,34 @@ export class ApifyScraperService {
       const client = this.getClient(apifyToken);
       
       // Obtener solo el primer post (más barato)
+      console.log(`💰 Requesting only 1 post from Apify for comparison...`);
+      
       const run = await client.actor(this.ACTORS.POSTS).call({
         username: username,
+        limit: 1,  // ← Solo 1 post para comparar
         page_number: 1,
       });
 
-      const { items } = await client.dataset(run.defaultDatasetId).listItems({
-        limit: 1,
-      });
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
 
       if (!items || items.length === 0) {
         return false;
       }
 
-      const latestPostId = (items[0] as any).data?.posts?.[0]?.urn || (items[0] as any).urn;
-      const cachedLatestId = cached.data[0]?.id;
+      // Extraer el ID del post más reciente
+      const latestPost = items[0];
+      const latestPostId = (latestPost as any).urn?.activity_urn || 
+                          (latestPost as any).full_urn || 
+                          (latestPost as any).urn;
+      
+      const cachedLatestId = typeof cached.data[0]?.id === 'object' 
+        ? cached.data[0].id.activity_urn 
+        : cached.data[0]?.id;
 
       const hasNew = latestPostId !== cachedLatestId;
       
+      console.log(`  Latest post ID: ${latestPostId}`);
+      console.log(`  Cached post ID: ${cachedLatestId}`);
       console.log(hasNew ? `✅ New post detected!` : `ℹ️ No new posts`);
       console.log(`💰 Cost: ~$${((1 / 1000) * 5).toFixed(4)}`);
 
