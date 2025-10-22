@@ -60,16 +60,23 @@ export class ApifyScraperService {
       // Obtener resultados
       const { items } = await client.dataset(run.defaultDatasetId).listItems();
       
+      console.log(`📦 Apify returned ${items?.length || 0} items`);
+      
       if (!items || items.length === 0) {
         console.log(`ℹ️ No posts found for ${username}`);
         return [];
       }
+
+      // Log del primer item para debug
+      console.log(`🔍 First item structure:`, JSON.stringify(items[0], null, 2).substring(0, 500));
 
       // Tomar solo los más recientes
       const recentPosts = items.slice(0, maxPosts);
 
       // Normalizar datos al formato esperado
       const normalizedPosts = this.normalizePosts(recentPosts);
+      
+      console.log(`✨ Normalized ${normalizedPosts.length} posts`);
 
       // Detectar posts nuevos comparando con cache anterior
       const previousCache = this.cache.get(cacheKey);
@@ -185,26 +192,58 @@ export class ApifyScraperService {
    * Normaliza los datos de Apify al formato esperado
    */
   private normalizePosts(apifyPosts: any[]): LinkedInPost[] {
-    return apifyPosts
-      .filter(item => item.data && item.data.posts)
-      .flatMap(item => item.data.posts)
-      .map(post => ({
-        id: post.urn || post.full_urn,
-        url: post.url,
-        authorName: post.author?.first_name + ' ' + post.author?.last_name,
-        authorUrl: post.author?.profile_url,
-        authorHeadline: post.author?.headline || '',
-        content: post.text || '',
-        publishedAt: post.posted_at?.date || new Date().toISOString(),
-        mediaUrls: this.extractMediaUrls(post),
-        metrics: {
-          likes: post.stats?.like || 0,
-          comments: post.stats?.comments || 0,
-          reposts: post.stats?.reposts || 0,
-          views: post.stats?.total_reactions || 0,
-        },
-        interactions: [], // Se llenan después si es necesario
-      }));
+    console.log(`🔧 Starting normalization of ${apifyPosts.length} items...`);
+    
+    const posts = apifyPosts
+      .map((item, index) => {
+        // Apify puede devolver diferentes estructuras
+        // Opción 1: item.data.posts (array)
+        // Opción 2: item directamente es el post
+        // Opción 3: item.posts (array)
+        
+        let postsArray: any[] = [];
+        
+        if (item.data && item.data.posts) {
+          postsArray = item.data.posts;
+        } else if (item.posts) {
+          postsArray = item.posts;
+        } else if (item.urn || item.url) {
+          // El item mismo es un post
+          postsArray = [item];
+        }
+        
+        console.log(`  Item ${index}: Found ${postsArray.length} posts`);
+        
+        return postsArray;
+      })
+      .flat()
+      .filter(post => post && (post.urn || post.full_urn))
+      .map((post, index) => {
+        console.log(`  Post ${index}: ${post.urn || post.full_urn}`);
+        
+        return {
+          id: post.urn || post.full_urn,
+          url: post.url || `https://www.linkedin.com/feed/update/${post.urn}`,
+          authorName: post.author 
+            ? `${post.author.first_name || ''} ${post.author.last_name || ''}`.trim()
+            : 'Unknown',
+          authorUrl: post.author?.profile_url || '',
+          authorHeadline: post.author?.headline || '',
+          content: post.text || post.commentary?.text || '',
+          publishedAt: post.posted_at?.date || post.posted_at || new Date().toISOString(),
+          mediaUrls: this.extractMediaUrls(post),
+          metrics: {
+            likes: post.stats?.like || post.num_likes || 0,
+            comments: post.stats?.comments || post.num_comments || 0,
+            reposts: post.stats?.reposts || post.num_shares || 0,
+            views: post.stats?.total_reactions || 0,
+          },
+          interactions: [],
+        };
+      });
+    
+    console.log(`✅ Successfully normalized ${posts.length} posts`);
+    return posts;
   }
 
   private extractMediaUrls(post: any): string[] {
