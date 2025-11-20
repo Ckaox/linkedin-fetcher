@@ -339,13 +339,12 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
   }
 });
 
-// Get interactions for a specific post (simplified - just pass post ID)
-app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
+// Get ONLY metrics for a specific post (cheap - just numbers)
+app.get('/api/posts/:postId/metrics', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
     const username = req.query.username as string || 'gabrielmartinezes';
 
-    // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
                        req.query.apify_token as string || 
                        process.env.APIFY_API_TOKEN || '';
@@ -353,15 +352,13 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     if (!apifyToken) {
       return res.status(400).json({
         success: false,
-        error: 'Missing Apify token. Provide via header "x-apify-token" or query param "apify_token"',
+        error: 'Missing Apify token',
         timestamp: new Date().toISOString(),
       } as ApiResponse<null>);
     }
 
-    console.log(`\n📊 Request: Get interactions for post ${postId}`);
+    console.log(`\n📊 Request: Get ONLY metrics for post ${postId}`);
 
-    // Primero obtener las métricas actuales del post
-    console.log(`   Step 1: Fetching current metrics...`);
     const posts = await apifyService.updatePostMetrics(apifyToken, username, [postId]);
     
     if (!posts || posts.length === 0) {
@@ -373,24 +370,8 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     }
 
     const post = posts[0];
-    const currentLikes = post.metrics.likes;
-    const currentComments = post.metrics.comments;
-    const currentReposts = post.metrics.reposts;
 
-    console.log(`   Current metrics: ${currentLikes} likes, ${currentComments} comments, ${currentReposts} reposts`);
-
-    // Luego obtener las interacciones
-    console.log(`   Step 2: Fetching interactions...`);
-    const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
-      likes: currentLikes,
-      comments: currentComments,
-    });
-
-    const responseSize = JSON.stringify(interactions).length;
-    const sizeKB = (responseSize / 1024).toFixed(2);
-
-    console.log(`✅ Response size: ${sizeKB} KB`);
-    console.log(`✅ Found ${interactions.length} interactions`);
+    console.log(`✅ Metrics: ${post.metrics.likes} likes, ${post.metrics.comments} comments, ${post.metrics.reposts} reposts`);
 
     res.json({
       success: true,
@@ -398,12 +379,71 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
         postId,
         postUrl: post.url,
         metrics: {
-          likes: currentLikes,
-          comments: currentComments,
-          reposts: currentReposts,
+          likes: post.metrics.likes,
+          comments: post.metrics.comments,
+          reposts: post.metrics.reposts,
         },
+      },
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<any>);
+  } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<null>);
+  }
+});
+
+// Get ONLY people who interacted (expensive - fetches users)
+app.get('/api/posts/:postId/interactions', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const likes = parseInt(req.query.likes as string) || 0;
+    const comments = parseInt(req.query.comments as string) || 0;
+
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    if (!likes && !comments) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide likes and/or comments count via query params',
+        example: '/api/posts/123/interactions?likes=50&comments=10',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    console.log(`\n👥 Request: Get people who interacted with post ${postId}`);
+    console.log(`   Fetching up to ${likes} likes and ${comments} comments`);
+
+    const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
+      likes,
+      comments,
+    });
+
+    console.log(`✅ Found ${interactions.length} people`);
+
+    res.json({
+      success: true,
+      data: {
+        postId,
         interactions,
-        totalInteractions: interactions.length,
+        totalPeople: interactions.length,
+        breakdown: {
+          likes: interactions.filter(i => i.type === 'like').length,
+          comments: interactions.filter(i => i.type === 'comment').length,
+        },
       },
       timestamp: new Date().toISOString(),
     } as ApiResponse<any>);
