@@ -457,6 +457,102 @@ app.get('/api/posts/:postId/interactions', async (req: Request, res: Response) =
   }
 });
 
+// Get ONLY people who LIKED the post
+app.get('/api/posts/:postId/likes', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const maxLikes = parseInt(req.query.max as string) || 100;
+
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    console.log(`\n👍 Request: Get people who LIKED post ${postId} (max: ${maxLikes})`);
+
+    const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
+      likes: maxLikes,
+      comments: 0,
+    });
+
+    const likes = interactions.filter(i => i.type === 'like');
+
+    console.log(`✅ Found ${likes.length} people who liked`);
+
+    res.json({
+      success: true,
+      data: {
+        postId,
+        likes,
+        totalLikes: likes.length,
+      },
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<any>);
+  } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<null>);
+  }
+});
+
+// Get ONLY people who COMMENTED on the post
+app.get('/api/posts/:postId/comments', async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const maxComments = parseInt(req.query.max as string) || 50;
+
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    console.log(`\n💬 Request: Get people who COMMENTED on post ${postId} (max: ${maxComments})`);
+
+    const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
+      likes: 0,
+      comments: maxComments,
+    });
+
+    const comments = interactions.filter(i => i.type === 'comment');
+
+    console.log(`✅ Found ${comments.length} people who commented`);
+
+    res.json({
+      success: true,
+      data: {
+        postId,
+        comments,
+        totalComments: comments.length,
+      },
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<any>);
+  } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<null>);
+  }
+});
+
 // Webhook management
 app.post('/webhook/subscribe', (req: Request, res: Response) => {
   const { url, events } = req.body;
