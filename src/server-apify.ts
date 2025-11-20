@@ -339,16 +339,11 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
   }
 });
 
-// Get interactions for a specific post
-// Use force=true to always fetch, or provide previous values to fetch only new ones
+// Get interactions for a specific post (simplified - just pass post ID)
 app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
-    const currentLikes = parseInt(req.query.current_likes as string) || 0;
-    const currentComments = parseInt(req.query.current_comments as string) || 0;
-    const previousLikes = parseInt(req.query.previous_likes as string) || 0;
-    const previousComments = parseInt(req.query.previous_comments as string) || 0;
-    const forceRefresh = req.query.force === 'true';
+    const username = req.query.username as string || 'gabrielmartinezes';
 
     // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -364,35 +359,28 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     }
 
     console.log(`\n📊 Request: Get interactions for post ${postId}`);
-    console.log(`   Current:  ${currentLikes} likes, ${currentComments} comments`);
-    console.log(`   Previous: ${previousLikes} likes, ${previousComments} comments`);
-    console.log(`   Force:    ${forceRefresh}`);
 
-    // Si force=true, siempre traer todas las interacciones
-    if (!forceRefresh) {
-      // Verificar si hay cambios
-      const hasNewLikes = currentLikes > previousLikes;
-      const hasNewComments = currentComments > previousComments;
-
-      if (!hasNewLikes && !hasNewComments) {
-        console.log(`ℹ️ No new interactions detected, skipping Apify call`);
-        console.log(`💡 Tip: Add ?force=true to always fetch interactions`);
-        return res.json({
-          success: true,
-          data: {
-            postId,
-            interactions: [],
-            total: 0,
-            message: 'No new interactions since last check. Use ?force=true to always fetch.',
-          },
-          timestamp: new Date().toISOString(),
-        } as ApiResponse<any>);
-      }
-    } else {
-      console.log(`🔄 Force refresh enabled - fetching ALL interactions`);
+    // Primero obtener las métricas actuales del post
+    console.log(`   Step 1: Fetching current metrics...`);
+    const posts = await apifyService.updatePostMetrics(apifyToken, username, [postId]);
+    
+    if (!posts || posts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: `Post ${postId} not found`,
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
     }
 
-    // Obtener interacciones
+    const post = posts[0];
+    const currentLikes = post.metrics.likes;
+    const currentComments = post.metrics.comments;
+    const currentReposts = post.metrics.reposts;
+
+    console.log(`   Current metrics: ${currentLikes} likes, ${currentComments} comments, ${currentReposts} reposts`);
+
+    // Luego obtener las interacciones
+    console.log(`   Step 2: Fetching interactions...`);
     const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: currentLikes,
       comments: currentComments,
@@ -408,15 +396,19 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
       success: true,
       data: {
         postId,
+        postUrl: post.url,
+        metrics: {
+          likes: currentLikes,
+          comments: currentComments,
+          reposts: currentReposts,
+        },
         interactions,
-        total: interactions.length,
-        currentLikes,
-        currentComments,
-        mode: forceRefresh ? 'all' : 'new-only',
+        totalInteractions: interactions.length,
       },
       timestamp: new Date().toISOString(),
     } as ApiResponse<any>);
   } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message,
