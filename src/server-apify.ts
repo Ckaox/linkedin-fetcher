@@ -105,7 +105,7 @@ app.get('/api/check-new-posts', async (req: Request, res: Response) => {
   }
 });
 
-// Get posts (CON CACHE - solo scrape si hay nuevos)
+// Get NEW posts (only IDs and basic info, NO metrics)
 app.get('/api/posts', async (req: Request, res: Response) => {
   try {
     // Obtener Apify token del header o query
@@ -128,46 +128,52 @@ app.get('/api/posts', async (req: Request, res: Response) => {
                     parseInt(process.env.MAX_POSTS_PER_SCRAPE || '10');
     const forceRefresh = req.query.force_refresh === 'true';
 
-    console.log(`\n📊 Request: Get posts for ${username} (max: ${maxPosts}, force: ${forceRefresh})`);
+    console.log(`\n📊 Request: Get NEW post IDs for ${username} (max: ${maxPosts})`);
 
-    // Si no es force refresh, intentar cache primero
+    // Si no es force refresh, verificar si hay posts nuevos
     if (!forceRefresh) {
-      // Verificar si hay posts nuevos antes de scrapear
       const hasNew = await apifyService.hasNewPosts(apifyToken, username);
       
       if (!hasNew) {
-        console.log(`ℹ️ No new posts detected, skipping expensive scraping`);
+        console.log(`ℹ️ No new posts detected`);
+        return res.json({
+          success: true,
+          data: {
+            posts: [],
+            totalPosts: 0,
+            message: 'No new posts found',
+          },
+          timestamp: new Date().toISOString(),
+        } as ApiResponse<any>);
       }
     }
 
-    // Obtener posts (usa cache si está disponible)
-    const posts = await apifyService.getProfilePosts(apifyToken, username, maxPosts);
+    // Obtener posts completos
+    const fullPosts = await apifyService.getProfilePosts(apifyToken, username, maxPosts);
 
-    // Calcular tamaño del response
-    const responseSize = JSON.stringify(posts).length;
-    const sizeKB = (responseSize / 1024).toFixed(2);
+    // Extraer solo IDs y info básica (SIN métricas)
+    const postsBasicInfo = fullPosts.map(post => ({
+      id: post.id,
+      url: post.url,
+      content: post.content,
+      publishedAt: post.publishedAt,
+      authorName: post.authorName,
+      authorUrl: post.authorUrl,
+    }));
 
-    console.log(`✅ Response size: ${sizeKB} KB (Clay limit: 200 KB)`);
+    console.log(`✅ Found ${postsBasicInfo.length} new posts (IDs only, no metrics)`);
 
-    if (responseSize > 200 * 1024) {
-      console.warn(`⚠️ Response exceeds Clay limit! Consider reducing max_posts`);
-    }
-
-    const response: ApiResponse<PostsResponse> = {
+    const response: ApiResponse<any> = {
       success: true,
       data: {
-        posts,
-        totalPosts: posts.length,
+        posts: postsBasicInfo,
+        totalPosts: postsBasicInfo.length,
         scrapedAt: new Date().toISOString(),
         profileUrl: `https://www.linkedin.com/in/${username}/`,
+        note: 'Use /api/posts/refresh-metrics to get current metrics for these posts',
       },
       timestamp: new Date().toISOString(),
     };
-
-    // Notificar webhooks si hay posts nuevos
-    if (posts.length > 0) {
-      webhookManager.notify('new_post', posts[0]);
-    }
 
     res.json(response);
   } catch (error: any) {
@@ -181,7 +187,7 @@ app.get('/api/posts', async (req: Request, res: Response) => {
   }
 });
 
-// Update metrics for existing posts
+// Update metrics for existing posts (with cache comparison)
 app.post('/api/posts/update-metrics', async (req: Request, res: Response) => {
   try {
     console.log(`\n📥 Received update-metrics request`);
@@ -266,12 +272,81 @@ app.post('/api/posts/update-metrics', async (req: Request, res: Response) => {
   }
 });
 
-// Get interactions for a specific post
+// Refresh metrics (always scrapes, no cache comparison) - RECOMMENDED FOR CLAY
+app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
+  try {
+    console.log(`\n🔄 Received refresh-metrics request`);
+    
+    const { username, postIds } = req.body;
+
+    if (!username || !postIds || !Array.isArray(postIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: username, postIds (array of post IDs)',
+        example: {
+          username: 'profilename',
+          postIds: ['7382355485938597888', '7382356837129666561']
+        },
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    // Obtener Apify token del header o query
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token. Provide via header "x-apify-token"',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    console.log(`\n📊 Request: Refresh metrics for ${postIds.length} posts from ${username}`);
+
+    // Siempre hacer scraping, sin comparación con cache
+    const updatedPosts = await apifyService.updatePostMetrics(
+      apifyToken,
+      username,
+      postIds
+    );
+
+    const responseSize = JSON.stringify(updatedPosts).length;
+    const sizeKB = (responseSize / 1024).toFixed(2);
+
+    console.log(`✅ Response size: ${sizeKB} KB`);
+    console.log(`✅ Refreshed ${updatedPosts.length} posts`);
+
+    res.json({
+      success: true,
+      data: {
+        posts: updatedPosts,
+        totalRefreshed: updatedPosts.length,
+        scrapedAt: new Date().toISOString(),
+      },
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<any>);
+  } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<null>);
+  }
+});
+
+// Get NEW interactions for a specific post (only people who interacted since last check)
 app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
     const currentLikes = parseInt(req.query.current_likes as string) || 0;
     const currentComments = parseInt(req.query.current_comments as string) || 0;
+    const previousLikes = parseInt(req.query.previous_likes as string) || 0;
+    const previousComments = parseInt(req.query.previous_comments as string) || 0;
 
     // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -286,9 +361,30 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
       } as ApiResponse<null>);
     }
 
-    console.log(`\n📊 Request: Get interactions for post ${postId}`);
-    console.log(`   Current stats: ${currentLikes} likes, ${currentComments} comments`);
+    console.log(`\n📊 Request: Get NEW interactions for post ${postId}`);
+    console.log(`   Previous: ${previousLikes} likes, ${previousComments} comments`);
+    console.log(`   Current:  ${currentLikes} likes, ${currentComments} comments`);
+    console.log(`   New:      ${currentLikes - previousLikes} likes, ${currentComments - previousComments} comments`);
 
+    // Verificar si hay cambios
+    const hasNewLikes = currentLikes > previousLikes;
+    const hasNewComments = currentComments > previousComments;
+
+    if (!hasNewLikes && !hasNewComments) {
+      console.log(`ℹ️ No new interactions detected, skipping Apify call`);
+      return res.json({
+        success: true,
+        data: {
+          postId,
+          interactions: [],
+          total: 0,
+          message: 'No new interactions since last check',
+        },
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<any>);
+    }
+
+    // Obtener solo las interacciones nuevas
     const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: currentLikes,
       comments: currentComments,
@@ -298,6 +394,7 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     const sizeKB = (responseSize / 1024).toFixed(2);
 
     console.log(`✅ Response size: ${sizeKB} KB`);
+    console.log(`✅ Found ${interactions.length} NEW interactions`);
 
     res.json({
       success: true,
@@ -305,6 +402,8 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
         postId,
         interactions,
         total: interactions.length,
+        newLikes: currentLikes - previousLikes,
+        newComments: currentComments - previousComments,
       },
       timestamp: new Date().toISOString(),
     } as ApiResponse<any>);
@@ -415,9 +514,11 @@ app.listen(PORT, () => {
   console.log(`   GET  http://localhost:${PORT}/health`);
   console.log(`   GET  http://localhost:${PORT}/api/check-new-posts?username=USER`);
   console.log(`   GET  http://localhost:${PORT}/api/posts?username=USER`);
-  console.log(`   POST http://localhost:${PORT}/api/posts/update-metrics`);
+  console.log(`   POST http://localhost:${PORT}/api/posts/update-metrics (with cache)`);
+  console.log(`   POST http://localhost:${PORT}/api/posts/refresh-metrics (no cache) ⭐`);
   console.log(`   GET  http://localhost:${PORT}/api/interactions/:postId`);
   console.log('\n💡 All endpoints require Apify token via header "x-apify-token"\n');
+  console.log('⭐ Use /refresh-metrics for Clay - simpler and no cache issues\n');
 
   // Limpiar cache expirado cada 6 horas
   setInterval(() => {
