@@ -339,7 +339,8 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
   }
 });
 
-// Get NEW interactions for a specific post (only people who interacted since last check)
+// Get interactions for a specific post
+// Use force=true to always fetch, or provide previous values to fetch only new ones
 app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -347,6 +348,7 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     const currentComments = parseInt(req.query.current_comments as string) || 0;
     const previousLikes = parseInt(req.query.previous_likes as string) || 0;
     const previousComments = parseInt(req.query.previous_comments as string) || 0;
+    const forceRefresh = req.query.force === 'true';
 
     // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -361,30 +363,36 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
       } as ApiResponse<null>);
     }
 
-    console.log(`\n📊 Request: Get NEW interactions for post ${postId}`);
-    console.log(`   Previous: ${previousLikes} likes, ${previousComments} comments`);
+    console.log(`\n📊 Request: Get interactions for post ${postId}`);
     console.log(`   Current:  ${currentLikes} likes, ${currentComments} comments`);
-    console.log(`   New:      ${currentLikes - previousLikes} likes, ${currentComments - previousComments} comments`);
+    console.log(`   Previous: ${previousLikes} likes, ${previousComments} comments`);
+    console.log(`   Force:    ${forceRefresh}`);
 
-    // Verificar si hay cambios
-    const hasNewLikes = currentLikes > previousLikes;
-    const hasNewComments = currentComments > previousComments;
+    // Si force=true, siempre traer todas las interacciones
+    if (!forceRefresh) {
+      // Verificar si hay cambios
+      const hasNewLikes = currentLikes > previousLikes;
+      const hasNewComments = currentComments > previousComments;
 
-    if (!hasNewLikes && !hasNewComments) {
-      console.log(`ℹ️ No new interactions detected, skipping Apify call`);
-      return res.json({
-        success: true,
-        data: {
-          postId,
-          interactions: [],
-          total: 0,
-          message: 'No new interactions since last check',
-        },
-        timestamp: new Date().toISOString(),
-      } as ApiResponse<any>);
+      if (!hasNewLikes && !hasNewComments) {
+        console.log(`ℹ️ No new interactions detected, skipping Apify call`);
+        console.log(`💡 Tip: Add ?force=true to always fetch interactions`);
+        return res.json({
+          success: true,
+          data: {
+            postId,
+            interactions: [],
+            total: 0,
+            message: 'No new interactions since last check. Use ?force=true to always fetch.',
+          },
+          timestamp: new Date().toISOString(),
+        } as ApiResponse<any>);
+      }
+    } else {
+      console.log(`🔄 Force refresh enabled - fetching ALL interactions`);
     }
 
-    // Obtener solo las interacciones nuevas
+    // Obtener interacciones
     const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: currentLikes,
       comments: currentComments,
@@ -394,7 +402,7 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
     const sizeKB = (responseSize / 1024).toFixed(2);
 
     console.log(`✅ Response size: ${sizeKB} KB`);
-    console.log(`✅ Found ${interactions.length} NEW interactions`);
+    console.log(`✅ Found ${interactions.length} interactions`);
 
     res.json({
       success: true,
@@ -402,8 +410,9 @@ app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
         postId,
         interactions,
         total: interactions.length,
-        newLikes: currentLikes - previousLikes,
-        newComments: currentComments - previousComments,
+        currentLikes,
+        currentComments,
+        mode: forceRefresh ? 'all' : 'new-only',
       },
       timestamp: new Date().toISOString(),
     } as ApiResponse<any>);
