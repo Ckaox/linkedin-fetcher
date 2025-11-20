@@ -288,13 +288,43 @@ export class ApifyScraperService {
       // Normalizar todos los posts
       const normalizedPosts = this.normalizePosts(items);
       
+      console.log(`🔍 Looking for posts with IDs: ${postIds.join(', ')}`);
+      console.log(`📋 Found ${normalizedPosts.length} posts total from Apify`);
+      
+      // Debug: mostrar primeros 3 IDs encontrados
+      if (normalizedPosts.length > 0) {
+        console.log(`   First 3 post IDs from Apify:`);
+        normalizedPosts.slice(0, 3).forEach(p => {
+          const pId = typeof p.id === 'object' ? JSON.stringify(p.id) : p.id;
+          console.log(`   - ${pId}`);
+        });
+      }
+      
       // Filtrar solo los posts que nos interesan
       const targetPosts = normalizedPosts.filter(post => 
-        postIds.some(id => {
-          const postId = typeof post.id === 'object' ? (post.id as any).activity_urn : post.id;
-          return postId.includes(id) || id.includes(postId);
+        postIds.some(searchId => {
+          // Normalizar el ID de búsqueda a solo números
+          const searchIdNumbers = String(searchId).replace(/[^0-9]/g, '');
+          
+          // Comparar (post.id ya son solo números)
+          const matches = post.id === searchIdNumbers;
+          
+          if (matches) {
+            console.log(`   ✅ Match! Post ID: ${post.id} matches search: ${searchId}`);
+          }
+          
+          return matches;
         })
       );
+      
+      if (targetPosts.length === 0) {
+        console.log(`❌ No matches found!`);
+        console.log(`   Searched for: ${postIds.map(id => String(id).replace(/[^0-9]/g, '')).join(', ')}`);
+        console.log(`   Available IDs (first 10):`);
+        normalizedPosts.slice(0, 10).forEach(p => {
+          console.log(`   - ${p.id}`);
+        });
+      }
       
       console.log(`✅ Found ${targetPosts.length} matching posts out of ${normalizedPosts.length}`);
       console.log(`💰 Cost: ~$${((maxPostsToFetch / 1000) * 5).toFixed(3)}`);
@@ -476,10 +506,23 @@ export class ApifyScraperService {
       .flat()
       .filter(post => post && (post.urn || post.full_urn))
       .map((post, index) => {
-        console.log(`  Post ${index}: ${post.urn || post.full_urn}`);
+        // Extraer ID correcto del objeto urn
+        let postId = '';
+        if (post.urn && typeof post.urn === 'object') {
+          postId = post.urn.activity_urn || post.urn.urn || JSON.stringify(post.urn);
+        } else if (post.urn) {
+          postId = post.urn;
+        } else if (post.full_urn) {
+          postId = post.full_urn;
+        }
+        
+        // Extraer solo números del ID
+        const numericId = String(postId).replace(/[^0-9]/g, '');
+        
+        console.log(`  Post ${index}: ${numericId} (original: ${postId})`);
         
         return {
-          id: post.urn || post.full_urn,
+          id: numericId, // Guardar solo números
           url: post.url || `https://www.linkedin.com/feed/update/${post.urn}`,
           authorName: post.author 
             ? `${post.author.first_name || ''} ${post.author.last_name || ''}`.trim()

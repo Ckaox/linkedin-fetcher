@@ -12,6 +12,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Helper function to extract post ID from URL or direct ID
+function extractPostId(input: string): string {
+  // Si es una URL, extraer el ID
+  if (input.includes('linkedin.com')) {
+    const match = input.match(/activity[\-_](\d+)/);
+    if (match && match[1]) {
+      console.log(`   Extracted ID from URL: ${match[1]}`);
+      return match[1];
+    }
+  }
+  
+  // Si ya es un ID, limpiarlo (quitar prefijos como urn:li:activity:)
+  const cleanId = input.replace(/^urn:li:activity:/, '').replace(/[^0-9]/g, '');
+  console.log(`   Using ID: ${cleanId}`);
+  return cleanId;
+}
+
 // Middleware
 app.use(helmet());
 app.use(cors());
@@ -272,7 +289,8 @@ app.post('/api/posts/update-metrics', async (req: Request, res: Response) => {
   }
 });
 
-// Refresh metrics (always scrapes, no cache comparison) - RECOMMENDED FOR CLAY
+// Refresh metrics for multiple posts (pass array of IDs)
+// USE THIS for daily updates in Clay
 app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
   try {
     console.log(`\n🔄 Received refresh-metrics request`);
@@ -284,14 +302,13 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
         success: false,
         error: 'Missing required fields: username, postIds (array of post IDs)',
         example: {
-          username: 'profilename',
+          username: 'gabrielmartinezes',
           postIds: ['7382355485938597888', '7382356837129666561']
         },
         timestamp: new Date().toISOString(),
       } as ApiResponse<null>);
     }
 
-    // Obtener Apify token del header o query
     const apifyToken = req.headers['x-apify-token'] as string || 
                        req.query.apify_token as string || 
                        process.env.APIFY_API_TOKEN || '';
@@ -306,7 +323,7 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
 
     console.log(`\n📊 Request: Refresh metrics for ${postIds.length} posts from ${username}`);
 
-    // Siempre hacer scraping, sin comparación con cache
+    // Siempre hacer scraping para obtener métricas actualizadas
     const updatedPosts = await apifyService.updatePostMetrics(
       apifyToken,
       username,
@@ -322,7 +339,12 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        posts: updatedPosts,
+        posts: updatedPosts.map(p => ({
+          id: p.id,
+          url: p.url,
+          metrics: p.metrics,
+          publishedAt: p.publishedAt,
+        })),
         totalRefreshed: updatedPosts.length,
         scrapedAt: new Date().toISOString(),
       },
@@ -340,9 +362,11 @@ app.post('/api/posts/refresh-metrics', async (req: Request, res: Response) => {
 });
 
 // Get ONLY metrics for a specific post (cheap - just numbers)
+// This endpoint is EXPENSIVE because it fetches multiple posts
+// Better to use /posts endpoint to get all posts at once
 app.get('/api/posts/:postId/metrics', async (req: Request, res: Response) => {
   try {
-    const { postId } = req.params;
+    const { postId: rawPostId } = req.params;
     const username = req.query.username as string || 'gabrielmartinezes';
 
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -357,21 +381,35 @@ app.get('/api/posts/:postId/metrics', async (req: Request, res: Response) => {
       } as ApiResponse<null>);
     }
 
-    console.log(`\n📊 Request: Get ONLY metrics for post ${postId}`);
+    console.log(`\n📊 Request: Get metrics for specific post ${rawPostId}`);
+    console.log(`⚠️  WARNING: This fetches ALL recent posts to find yours.`);
+    console.log(`💡 TIP: Use GET /api/posts?username=${username} to get all posts at once (more efficient)`);
+    
+    // Extraer ID limpio de URL o ID
+    const postId = extractPostId(rawPostId);
+    
+    // Aumentar el límite para buscar posts más viejos
+    const maxPosts = parseInt(req.query.max_posts as string) || 100;
+    console.log(`   Searching in ${username}'s last ${maxPosts} posts...`);
 
     const posts = await apifyService.updatePostMetrics(apifyToken, username, [postId]);
     
     if (!posts || posts.length === 0) {
+      console.log(`❌ Post not found. Tips:`);
+      console.log(`   - Post might be older than last ${maxPosts} posts`);
+      console.log(`   - Try: /api/posts?username=${username} to get all recent posts`);
+      
       return res.status(404).json({
         success: false,
-        error: `Post ${postId} not found`,
+        error: `Post ${postId} not found in ${username}'s last ${maxPosts} posts`,
+        tip: `Use GET /api/posts?username=${username} to get all posts with metrics at once`,
         timestamp: new Date().toISOString(),
       } as ApiResponse<null>);
     }
 
     const post = posts[0];
 
-    console.log(`✅ Metrics: ${post.metrics.likes} likes, ${post.metrics.comments} comments, ${post.metrics.reposts} reposts`);
+    console.log(`✅ Found! Metrics: ${post.metrics.likes} likes, ${post.metrics.comments} comments, ${post.metrics.reposts} reposts`);
 
     res.json({
       success: true,
@@ -458,9 +496,10 @@ app.get('/api/posts/:postId/interactions', async (req: Request, res: Response) =
 });
 
 // Get ONLY people who LIKED the post
+// Accepts post ID or full LinkedIn URL
 app.get('/api/posts/:postId/likes', async (req: Request, res: Response) => {
   try {
-    const { postId } = req.params;
+    const { postId: rawPostId } = req.params;
     const maxLikes = parseInt(req.query.max as string) || 100;
 
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -475,7 +514,10 @@ app.get('/api/posts/:postId/likes', async (req: Request, res: Response) => {
       } as ApiResponse<null>);
     }
 
-    console.log(`\n👍 Request: Get people who LIKED post ${postId} (max: ${maxLikes})`);
+    console.log(`\n👍 Request: Get people who LIKED post ${rawPostId} (max: ${maxLikes})`);
+    
+    // Extraer ID limpio
+    const postId = extractPostId(rawPostId);
 
     const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: maxLikes,
@@ -506,9 +548,10 @@ app.get('/api/posts/:postId/likes', async (req: Request, res: Response) => {
 });
 
 // Get ONLY people who COMMENTED on the post
+// Accepts post ID or full LinkedIn URL
 app.get('/api/posts/:postId/comments', async (req: Request, res: Response) => {
   try {
-    const { postId } = req.params;
+    const { postId: rawPostId } = req.params;
     const maxComments = parseInt(req.query.max as string) || 50;
 
     const apifyToken = req.headers['x-apify-token'] as string || 
@@ -523,7 +566,10 @@ app.get('/api/posts/:postId/comments', async (req: Request, res: Response) => {
       } as ApiResponse<null>);
     }
 
-    console.log(`\n💬 Request: Get people who COMMENTED on post ${postId} (max: ${maxComments})`);
+    console.log(`\n💬 Request: Get people who COMMENTED on post ${rawPostId} (max: ${maxComments})`);
+    
+    // Extraer ID limpio
+    const postId = extractPostId(rawPostId);
 
     const interactions = await apifyService.getPostInteractions(apifyToken, postId, {
       likes: 0,
