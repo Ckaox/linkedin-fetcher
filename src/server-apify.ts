@@ -47,6 +47,24 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+// Simple test endpoint
+app.get('/test', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Server is working! 🎉',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post('/test-post', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'POST endpoint is working! 🎉',
+    receivedBody: req.body,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Check for new posts (lightweight, casi gratis)
 app.get('/api/check-new-posts', async (req: Request, res: Response) => {
   try {
@@ -166,9 +184,13 @@ app.get('/api/posts', async (req: Request, res: Response) => {
 // Update metrics for existing posts
 app.post('/api/posts/update-metrics', async (req: Request, res: Response) => {
   try {
+    console.log(`\n📥 Received update-metrics request`);
+    console.log(`   Body:`, JSON.stringify(req.body).substring(0, 200));
+    
     const { username, posts } = req.body;
 
     if (!username || !posts || !Array.isArray(posts)) {
+      console.error(`❌ Validation error: missing fields`);
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: username, posts (array of {id, likes, comments, reposts})',
