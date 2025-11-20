@@ -1,0 +1,252 @@
+{
+  "clay_workflow_example": {
+    "name": "Daily LinkedIn Post Metrics Update",
+    "description": "Actualiza métricas de posts existentes en Clay sin traer posts duplicados",
+    "schedule": "Daily at 8:00 AM",
+    
+    "step_1_check_new_posts": {
+      "action": "HTTP API Call",
+      "method": "GET",
+      "url": "{{secrets.SERVER_URL}}/api/check-new-posts?username={{linkedin_username}}",
+      "headers": {
+        "x-apify-token": "{{secrets.APIFY_TOKEN}}"
+      },
+      "expected_response": {
+        "success": true,
+        "data": {
+          "hasNewPosts": true,
+          "username": "gabrielmartinezes"
+        }
+      },
+      "cost": "$0.005"
+    },
+
+    "step_2_update_existing_posts": {
+      "action": "HTTP API Call",
+      "method": "POST",
+      "url": "{{secrets.SERVER_URL}}/api/posts/update-metrics",
+      "headers": {
+        "x-apify-token": "{{secrets.APIFY_TOKEN}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "username": "{{linkedin_username}}",
+        "posts": "{{posts_from_clay_table}}"
+      },
+      "posts_from_clay_table_example": [
+        {
+          "id": "urn:li:activity:7265432198765432100",
+          "likes": 150,
+          "comments": 25,
+          "reposts": 10
+        },
+        {
+          "id": "urn:li:activity:7265432198765432101",
+          "likes": 89,
+          "comments": 12,
+          "reposts": 3
+        }
+      ],
+      "expected_response_if_no_changes": {
+        "success": true,
+        "data": {
+          "updatedPosts": [],
+          "totalUpdated": 0,
+          "comparison": {
+            "changed": [],
+            "unchanged": ["urn:li:activity:7265432198765432100", "urn:li:activity:7265432198765432101"],
+            "details": []
+          },
+          "message": "No metrics changes detected"
+        }
+      },
+      "expected_response_if_changes": {
+        "success": true,
+        "data": {
+          "updatedPosts": [
+            {
+              "id": "urn:li:activity:7265432198765432100",
+              "url": "https://linkedin.com/feed/update/...",
+              "metrics": {
+                "likes": 175,
+                "comments": 30,
+                "reposts": 12
+              }
+            }
+          ],
+          "totalUpdated": 1,
+          "comparison": {
+            "changed": ["urn:li:activity:7265432198765432100"],
+            "unchanged": ["urn:li:activity:7265432198765432101"],
+            "details": [
+              {
+                "id": "urn:li:activity:7265432198765432100",
+                "changes": {
+                  "likes": 25,
+                  "comments": 5,
+                  "reposts": 2
+                }
+              }
+            ]
+          }
+        }
+      },
+      "cost_if_no_changes": "$0",
+      "cost_if_changes": "$0.10",
+      "clay_table_update": {
+        "condition": "if updatedPosts.length > 0",
+        "update_columns": {
+          "likes": "{{updatedPosts[0].metrics.likes}}",
+          "comments": "{{updatedPosts[0].metrics.comments}}",
+          "reposts": "{{updatedPosts[0].metrics.reposts}}",
+          "last_updated": "{{now}}"
+        }
+      }
+    },
+
+    "step_3_fetch_new_interactions": {
+      "action": "HTTP API Call",
+      "condition": "Run only for posts with changes (comparison.changed.length > 0)",
+      "method": "GET",
+      "url": "{{secrets.SERVER_URL}}/api/interactions/{{post_id}}?current_likes={{new_likes}}&current_comments={{new_comments}}",
+      "headers": {
+        "x-apify-token": "{{secrets.APIFY_TOKEN}}"
+      },
+      "example_for_post": "urn:li:activity:7265432198765432100",
+      "url_example": "https://your-app.onrender.com/api/interactions/7265432198765432100?current_likes=175&current_comments=30",
+      "expected_response": {
+        "success": true,
+        "data": {
+          "postId": "7265432198765432100",
+          "interactions": [
+            {
+              "type": "like",
+              "userName": "Juan Pérez",
+              "userUrl": "https://linkedin.com/in/juanperez",
+              "userHeadline": "CEO at TechCorp"
+            },
+            {
+              "type": "comment",
+              "userName": "María García",
+              "userUrl": "https://linkedin.com/in/mariagarcia",
+              "userHeadline": "Marketing Director",
+              "commentText": "Excelente post!"
+            }
+          ],
+          "total": 2
+        }
+      },
+      "cost_per_post": "$0.35",
+      "clay_table_insert": {
+        "table": "LinkedIn Interactions",
+        "columns": {
+          "post_id": "{{postId}}",
+          "type": "{{interactions[i].type}}",
+          "user_name": "{{interactions[i].userName}}",
+          "user_url": "{{interactions[i].userUrl}}",
+          "user_headline": "{{interactions[i].userHeadline}}",
+          "comment_text": "{{interactions[i].commentText}}",
+          "fetched_at": "{{now}}"
+        }
+      }
+    }
+  },
+
+  "clay_table_structure": {
+    "posts_table": {
+      "columns": [
+        "post_id (text)",
+        "post_url (text)",
+        "content (text)",
+        "likes (number)",
+        "comments (number)",
+        "reposts (number)",
+        "published_at (date)",
+        "last_updated (date)"
+      ]
+    },
+    "interactions_table": {
+      "columns": [
+        "post_id (text)",
+        "type (text: like/comment/repost)",
+        "user_name (text)",
+        "user_url (text)",
+        "user_headline (text)",
+        "comment_text (text)",
+        "fetched_at (date)"
+      ]
+    }
+  },
+
+  "cost_optimization_tips": [
+    {
+      "tip": "Batch all posts in single request",
+      "savings": "Reduce API calls from N to 1",
+      "example": "Instead of 10 separate requests, send all 10 posts in one POST /update-metrics"
+    },
+    {
+      "tip": "Only fetch interactions for changed posts",
+      "savings": "Skip ~70% of interaction fetches",
+      "example": "If 3 out of 10 posts changed, only fetch interactions for those 3"
+    },
+    {
+      "tip": "Update metrics every 24h, not every hour",
+      "savings": "Reduce calls by 96%",
+      "example": "1 daily update instead of 24 hourly updates"
+    },
+    {
+      "tip": "Skip old posts (>30 days)",
+      "savings": "Reduce posts to monitor by 50%",
+      "example": "Only update metrics for posts from last 30 days"
+    }
+  ],
+
+  "monthly_cost_scenarios": {
+    "scenario_1": {
+      "description": "10 posts, 1 new post per day, 2 posts change metrics daily",
+      "daily_cost": {
+        "check_new_posts": 0.005,
+        "fetch_new_post": 0.05,
+        "update_metrics": 0.10,
+        "fetch_interactions_2_posts": 0.70
+      },
+      "daily_total": "$0.855",
+      "monthly_total": "$25.65"
+    },
+    "scenario_2": {
+      "description": "10 posts, NO new posts, 1 post changes metrics daily",
+      "daily_cost": {
+        "check_new_posts": 0.005,
+        "update_metrics": 0.10,
+        "fetch_interactions_1_post": 0.35
+      },
+      "daily_total": "$0.455",
+      "monthly_total": "$13.65"
+    },
+    "scenario_3": {
+      "description": "10 posts, NO changes at all",
+      "daily_cost": {
+        "check_new_posts": 0.005,
+        "update_metrics": 0.00
+      },
+      "daily_total": "$0.005",
+      "monthly_total": "$0.15"
+    }
+  },
+
+  "troubleshooting": {
+    "error_missing_token": {
+      "message": "Missing Apify token",
+      "solution": "Add x-apify-token header or check Clay secrets configuration"
+    },
+    "error_invalid_post_id": {
+      "message": "Post not found",
+      "solution": "Verify post ID format (should include urn:li:activity:)"
+    },
+    "empty_updated_posts": {
+      "is_error": false,
+      "message": "No metrics changes detected",
+      "explanation": "This is normal - means no posts changed since last check"
+    }
+  }
+}

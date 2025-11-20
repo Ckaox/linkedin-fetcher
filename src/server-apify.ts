@@ -163,6 +163,87 @@ app.get('/api/posts', async (req: Request, res: Response) => {
   }
 });
 
+// Update metrics for existing posts
+app.post('/api/posts/update-metrics', async (req: Request, res: Response) => {
+  try {
+    const { username, posts } = req.body;
+
+    if (!username || !posts || !Array.isArray(posts)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: username, posts (array of {id, likes, comments, reposts})',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    // Obtener Apify token del header o query
+    const apifyToken = req.headers['x-apify-token'] as string || 
+                       req.query.apify_token as string || 
+                       process.env.APIFY_API_TOKEN || '';
+
+    if (!apifyToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing Apify token. Provide via header "x-apify-token"',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<null>);
+    }
+
+    console.log(`\n📊 Request: Update metrics for ${posts.length} posts from ${username}`);
+
+    // Comparar métricas para ver qué posts cambiaron
+    const comparison = apifyService.comparePostMetrics(posts);
+    
+    console.log(`   Posts with changes: ${comparison.changed.length}`);
+    console.log(`   Posts unchanged: ${comparison.unchanged.length}`);
+
+    // Si no hay cambios, retornar vacío
+    if (comparison.changed.length === 0) {
+      console.log(`✅ No metrics changes detected, skipping Apify call`);
+      return res.json({
+        success: true,
+        data: {
+          updatedPosts: [],
+          totalUpdated: 0,
+          comparison,
+          message: 'No metrics changes detected',
+        },
+        timestamp: new Date().toISOString(),
+      } as ApiResponse<any>);
+    }
+
+    // Obtener métricas actualizadas solo para posts que cambiaron
+    const updatedPosts = await apifyService.updatePostMetrics(
+      apifyToken,
+      username,
+      comparison.changed
+    );
+
+    const responseSize = JSON.stringify(updatedPosts).length;
+    const sizeKB = (responseSize / 1024).toFixed(2);
+
+    console.log(`✅ Response size: ${sizeKB} KB`);
+
+    res.json({
+      success: true,
+      data: {
+        updatedPosts,
+        totalUpdated: updatedPosts.length,
+        comparison,
+      },
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<any>);
+  } catch (error: any) {
+    console.error(`❌ Error:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    } as ApiResponse<null>);
+  }
+});
+
 // Get interactions for a specific post
 app.get('/api/interactions/:postId', async (req: Request, res: Response) => {
   try {
@@ -312,6 +393,7 @@ app.listen(PORT, () => {
   console.log(`   GET  http://localhost:${PORT}/health`);
   console.log(`   GET  http://localhost:${PORT}/api/check-new-posts?username=USER`);
   console.log(`   GET  http://localhost:${PORT}/api/posts?username=USER`);
+  console.log(`   POST http://localhost:${PORT}/api/posts/update-metrics`);
   console.log(`   GET  http://localhost:${PORT}/api/interactions/:postId`);
   console.log('\n💡 All endpoints require Apify token via header "x-apify-token"\n');
 

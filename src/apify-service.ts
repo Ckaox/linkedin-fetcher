@@ -259,6 +259,136 @@ export class ApifyScraperService {
   }
 
   /**
+   * Obtiene métricas actualizadas de posts específicos
+   * Usado para actualizar posts existentes en Clay
+   */
+  async updatePostMetrics(apifyToken: string, username: string, postIds: string[]): Promise<LinkedInPost[]> {
+    console.log(`🔄 Updating metrics for ${postIds.length} posts from: ${username}`);
+
+    try {
+      const client = this.getClient(apifyToken);
+      
+      // Obtener posts recientes (suficientes para cubrir los IDs solicitados)
+      const maxPostsToFetch = Math.max(20, postIds.length * 2);
+      console.log(`💰 Requesting ${maxPostsToFetch} posts from Apify to find target posts...`);
+      
+      const run = await client.actor(this.ACTORS.POSTS).call({
+        username: username,
+        limit: maxPostsToFetch,
+        page_number: 1,
+      });
+
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        console.log(`ℹ️ No posts found for ${username}`);
+        return [];
+      }
+
+      // Normalizar todos los posts
+      const normalizedPosts = this.normalizePosts(items);
+      
+      // Filtrar solo los posts que nos interesan
+      const targetPosts = normalizedPosts.filter(post => 
+        postIds.some(id => {
+          const postId = typeof post.id === 'object' ? (post.id as any).activity_urn : post.id;
+          return postId.includes(id) || id.includes(postId);
+        })
+      );
+      
+      console.log(`✅ Found ${targetPosts.length} matching posts out of ${normalizedPosts.length}`);
+      console.log(`💰 Cost: ~$${((maxPostsToFetch / 1000) * 5).toFixed(3)}`);
+
+      // Actualizar cache con las nuevas métricas
+      const cacheKey = `posts:${username}`;
+      const cached = this.cache.get(cacheKey);
+      
+      if (cached && cached.data) {
+        // Merge: actualizar posts existentes con nuevas métricas
+        const updatedData = cached.data.map((cachedPost: LinkedInPost) => {
+          const updated = targetPosts.find(p => {
+            const pId = typeof p.id === 'object' ? (p.id as any).activity_urn : p.id;
+            const cpId = typeof cachedPost.id === 'object' ? (cachedPost.id as any).activity_urn : cachedPost.id;
+            return pId === cpId;
+          });
+          return updated || cachedPost;
+        });
+        
+        this.saveToCache(cacheKey, updatedData);
+      }
+
+      return targetPosts;
+    } catch (error: any) {
+      console.error(`❌ Error updating metrics:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Compara métricas de posts y retorna solo los que cambiaron
+   */
+  comparePostMetrics(currentPosts: Array<{id: string, likes: number, comments: number, reposts: number}>): {
+    changed: string[];
+    unchanged: string[];
+    details: Array<{id: string, changes: {likes?: number, comments?: number, reposts?: number}}>
+  } {
+    const result = {
+      changed: [] as string[],
+      unchanged: [] as string[],
+      details: [] as Array<{id: string, changes: {likes?: number, comments?: number, reposts?: number}}>
+    };
+
+    for (const post of currentPosts) {
+      const snapshot = this.interactionSnapshots.get(post.id);
+      
+      if (!snapshot) {
+        // Post nuevo o nunca verificado
+        result.changed.push(post.id);
+        result.details.push({
+          id: post.id,
+          changes: {
+            likes: post.likes,
+            comments: post.comments,
+            reposts: post.reposts
+          }
+        });
+        continue;
+      }
+
+      // Comparar con snapshot previo
+      const prevLikes = snapshot.likeUserIds.size;
+      const prevComments = snapshot.commentIds.size;
+      
+      const changes: any = {};
+      let hasChanges = false;
+
+      if (post.likes !== prevLikes) {
+        changes.likes = post.likes - prevLikes;
+        hasChanges = true;
+      }
+      if (post.comments !== prevComments) {
+        changes.comments = post.comments - prevComments;
+        hasChanges = true;
+      }
+      // Reposts no tienen snapshot, siempre verificar
+      if (post.reposts > 0) {
+        changes.reposts = post.reposts;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        result.changed.push(post.id);
+        result.details.push({ id: post.id, changes });
+      } else {
+        result.unchanged.push(post.id);
+      }
+    }
+
+    console.log(`📊 Metrics comparison: ${result.changed.length} changed, ${result.unchanged.length} unchanged`);
+    return result;
+  }
+
+  /**
    * Verifica si hay posts nuevos sin hacer scraping completo
    * Solo obtiene el primer post y compara
    */

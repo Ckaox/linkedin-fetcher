@@ -54,6 +54,23 @@ Headers:
 
 Returns post data with caching. Cost: Free if cached, ~$0.05 if scraping
 
+### Update Post Metrics
+```
+POST /api/posts/update-metrics
+Headers:
+  x-apify-token: YOUR_APIFY_TOKEN
+Body:
+{
+  "username": "profile-name",
+  "posts": [
+    {"id": "post-urn-1", "likes": 150, "comments": 25, "reposts": 10},
+    {"id": "post-urn-2", "likes": 89, "comments": 12, "reposts": 3}
+  ]
+}
+```
+
+Returns updated metrics only for posts that changed. Cost: Free if no changes, ~$0.10 if changes detected
+
 ### Fetch Interactions
 ```
 GET /api/interactions/:postId?current_likes=100&current_comments=20
@@ -85,17 +102,52 @@ Store in Clay Secrets:
 - `APIFY_TOKEN` - Your Apify token
 - `SERVER_URL` - Your Render URL (https://your-app.onrender.com)
 
+### Workflow 1: Fetch New Posts (Initial Load)
 Create HTTP API request:
 - URL: `{{secrets.SERVER_URL}}/api/check-new-posts?username=target`
 - Add header:
   - `x-apify-token: {{secrets.APIFY_TOKEN}}`
 
-Daily workflow:
-1. Check for new posts (cheap)
-2. If none, stop
-3. If new posts, fetch data
-4. Check interaction changes
-5. Fetch interactions only if changed
+If new posts found:
+- URL: `{{secrets.SERVER_URL}}/api/posts?username=target&max_posts=10`
+- Add header:
+  - `x-apify-token: {{secrets.APIFY_TOKEN}}`
+
+### Workflow 2: Update Existing Posts (Daily/Hourly)
+For each existing post in Clay table, prepare array:
+```json
+{
+  "username": "target-username",
+  "posts": [
+    {"id": "{{post_id}}", "likes": {{current_likes}}, "comments": {{current_comments}}, "reposts": {{current_reposts}}}
+  ]
+}
+```
+
+Create HTTP API request:
+- Method: `POST`
+- URL: `{{secrets.SERVER_URL}}/api/posts/update-metrics`
+- Headers:
+  - `x-apify-token: {{secrets.APIFY_TOKEN}}`
+  - `Content-Type: application/json`
+- Body: The JSON above with your table columns
+
+This will:
+1. Compare metrics with cached values
+2. Only scrape if changes detected
+3. Return updated metrics for posts that changed
+4. Update Clay table with new numbers
+
+### Workflow 3: Fetch New Interactions
+After updating metrics, for posts with increased likes/comments:
+- URL: `{{secrets.SERVER_URL}}/api/interactions/{{post_id}}?current_likes={{new_likes}}&current_comments={{new_comments}}`
+- Add header:
+  - `x-apify-token: {{secrets.APIFY_TOKEN}}`
+
+Daily automation example:
+1. Check for new posts (cheap) → Add to table if found
+2. Update metrics for existing posts → Only scrapes if changed
+3. Fetch new interactions for posts with changes → Get new people
 
 ## Authentication
 
